@@ -1,0 +1,16 @@
+RewriteEngine on
+
+# Redirect www to none-www
+RewriteCond %{HTTP_HOST} ^www\.(.*)$ [NC]
+RewriteRule ^(.*)$ https://%1%{REQUEST_URI} [QSA,R=301,L]
+
+# Redirect http to https
+RewriteCond %{HTTPS} !=on
+RewriteCond %{ENV:HTTPS} !=on
+RewriteRule .* https://%{SERVER_NAME}%{REQUEST_URI} [QSA,R=301,L]
+
+# Compress text, html, css and ics
+AddOutputFilterByType DEFLATE text/plain
+AddOutputFilterByType DEFLATE text/html
+AddOutputFilterByType DEFLATE text/calendar
+AddOutputFilterByType DEFLATE text/css

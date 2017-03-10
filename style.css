@@ -1,0 +1,22 @@
+html {
+    background-color: #fff;
+    color: #444;
+    font-family: Merriweather, Georgia, serif;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    hyphens: auto;
+    padding: 5%;
+}
+ul {
+    list-style-type: none;
+    line-height: 2;
+    font-family: Montserrat, Verdana, sans-serif;
+}
+a {
+    text-decoration: none;
+    color: #158;
+}
+a:hover {
+    text-decoration: underline;
+}
+
