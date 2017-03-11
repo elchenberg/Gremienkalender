@@ -1,4 +1,5 @@
-index.html
+*.html
+*.css
 *.ics
 
 # https://github.com/github/gitignore/blob/master/Python.gitignore
