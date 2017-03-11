@@ -2,10 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import http.client
-# import json
-# import sys
 import time
-# import urllib.parse
 import zlib
 
 import lxml.html
@@ -71,9 +68,11 @@ class Event():
         else:
             ics.append('DURATION:PT2H')
         ics.append('SUMMARY:%s' % self.summary)
-        ics.append('DESCRIPTION:%s' % self.description)
         if self.url:
+            ics.append('DESCRIPTION:%s\\n%s' % (self.description, self.url))
             ics.append('URL:%s' % self.url)
+        else:
+            ics.append('DESCRIPTION:%s' % self.description)
         ics.append('END:VEVENT')
         return '\r\n'.join(ics)
 

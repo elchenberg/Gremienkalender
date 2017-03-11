@@ -9,8 +9,10 @@ html {
 }
 ul {
     list-style-type: none;
-    line-height: 2;
     font-family: Montserrat, Verdana, sans-serif;
+}
+li {
+    margin-top: 1em;
 }
 a {
     text-decoration: none;
