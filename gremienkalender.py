@@ -76,20 +76,20 @@ class Event():
         ics.append('END:VEVENT')
         return '\r\n'.join(ics)
 
-request_wait = 3
-session = http.client.HTTPSConnection('www.berlin.de', timeout=6)
+REQUEST_WAIT = 3
+SESSION = http.client.HTTPSConnection('www.berlin.de', timeout=6)
 request_time = time.time()
 
 def get_response_text(url):
     global request_time
 
     elapsed_time = time.time() - request_time
-    if elapsed_time < request_wait:
-        time.sleep(request_wait - elapsed_time)
+    if elapsed_time < REQUEST_WAIT:
+        time.sleep(REQUEST_WAIT - elapsed_time)
 
-    session.request('GET', url, headers={'Accept-Encoding': 'gzip'})
+    SESSION.request('GET', url, headers={'Accept-Encoding': 'gzip'})
     print('GET', url)
-    response = session.getresponse()
+    response = SESSION.getresponse()
     request_time = time.time()
 
     # assert response.status == 200
@@ -158,15 +158,15 @@ def get_borough_slug(obj):
     else:
         return BOROUGH_SLUGS[get_borough_id(obj)-1]
 
-html_template = ('<!DOCTYPE html>\n<html lang="de">\n<head>\n'+
+HTML_TEMPLATE = ('<!DOCTYPE html>\n<html lang="de">\n<head>\n'+
                  '<meta charset="UTF-8">\n<meta name="viewport" '+
                  'content="width=device-width, initial-scale=1.0">\n'+
                  '<title>%s</title>\n<link rel="stylesheet" '+
                  'type="text/css" href="style.css">\n</head>\n<body>\n'+
                  '<header>\n<h1>%s</h1>\n<p>%s</p>\n</header>\n%s'+
                  '</body>\n</html>')
-sect_template = '<section>\n<h2>%s</h2>\n<ul>\n%s</ul>\n</section>\n'
-item_template = '<li><a href="%s">%s</a></li>\n'
+SECT_TEMPLATE = '<section>\n<h2>%s</h2>\n<ul>\n%s</ul>\n</section>\n'
+ITEM_TEMPLATE = '<li><a href="%s">%s</a></li>\n'
 
 def main():
     with open('input.txt', 'r') as textfile:
@@ -204,7 +204,6 @@ def main():
     for borough in boroughs:
         b_name = borough['name']
         b_slug = borough['slug']
-        b_id = borough['id']
         b_url = borough['url']
 
         html_data[b_name] = []
@@ -259,8 +258,8 @@ def main():
             if calendar.ics():
                 filename_template = '%s-%03d.ics'
                 filename = filename_template % (b_slug, c_id)
-                with open(filename, 'w') as f:
-                    f.write(calendar.ics())
+                with open(filename, 'w') as icsfile:
+                    icsfile.write(calendar.ics())
                 html_data[b_name].append([filename, c_name])
 
     page_title = ('Gremienkalender der Berliner '+
@@ -270,13 +269,13 @@ def main():
     html_sections = ''
     for borough in sorted(html_data):
         items = html_data[borough]
-        items = ''.join([item_template % (a, t) for a, t in items])
-        section = sect_template % (borough, items)
+        items = ''.join([ITEM_TEMPLATE % (a, t) for a, t in items])
+        section = SECT_TEMPLATE % (borough, items)
         html_sections += section
-    html_string = html_template % (page_title, page_title,
+    html_string = HTML_TEMPLATE % (page_title, page_title,
                                    page_help, html_sections)
-    with open('index.html', 'w') as f:
-        f.write(html_string)
+    with open('index.html', 'w') as htmlfile:
+        htmlfile.write(html_string)
 
 if __name__ == '__main__':
     main()
