@@ -63,10 +63,6 @@ class Event():
         ics.append('UID:%s' % self.uid)
         ics.append('DTSTAMP:%s' % self.dtstamp)
         ics.append('DTSTART;TZID=Europe/Berlin:%s' % self.dtstart)
-        if self.duration:
-            ics.append('DURATION:%s' % self.duration)
-        else:
-            ics.append('DURATION:PT2H')
         ics.append('SUMMARY:%s' % self.summary)
         if self.url:
             ics.append('DESCRIPTION:%s\\n%s' % (self.description, self.url))
@@ -158,15 +154,70 @@ def get_borough_slug(obj):
     else:
         return BOROUGH_SLUGS[get_borough_id(obj)-1]
 
-HTML_TEMPLATE = ('<!DOCTYPE html>\n<html lang="de">\n<head>\n'+
-                 '<meta charset="UTF-8">\n<meta name="viewport" '+
-                 'content="width=device-width, initial-scale=1.0">\n'+
-                 '<title>%s</title>\n<link rel="stylesheet" '+
-                 'type="text/css" href="style.css">\n</head>\n<body>\n'+
-                 '<header>\n<h1>%s</h1>\n<p>%s</p>\n</header>\n%s'+
-                 '</body>\n</html>')
-SECT_TEMPLATE = '<section>\n<h2>%s</h2>\n<ul>\n%s</ul>\n</section>\n'
-ITEM_TEMPLATE = '<li><a href="%s">%s</a></li>\n'
+HTML_TEMPLATE = (
+    '<!DOCTYPE html>'
+    '<html lang="de">'
+    '<head>'
+    '<meta charset="UTF-8">'
+    '<meta name="viewport" '
+        'content="width=device-width, initial-scale=1.0">'
+    '<title>'
+        'Gremienkalender der Berliner '
+        'Bezirksverordnetenversammlungen'
+    '</title>'
+    '<style>'
+    'html{font-family:Montserrat,Verdana,Geneva,sans-serif;'
+        'hyphens:auto}'
+    'body{max-width:720px;margin:0 auto;padding:2% 4%}'
+    'h1,h2{font-family:Merriweather,Georgia,serif}'
+    'ul{list-style-type:none}'
+    'li{margin-top:1em}'
+    'a{text-decoration:none;color:#158}'
+    'a:hover{text-decoration:underline}'
+    '</style>'
+    '</head>'
+    '<body>'
+    '<header>'
+    '<h1>'
+        'Gremienkalender der Berliner '
+        'Bezirksverordnetenversammlungen'
+    '</h1>'
+    '<p>'
+        'Kalender der Sitzungstermine der '
+        'Berliner Bezirksverordnetenversammlungen, '
+        'ihrer Ausschüsse und sonstiger Gremien '
+        'als iCalender-Dateien (.ics) '
+        'zum Abspeichern oder Abonnieren.'
+    '</p>'
+    '<p><small>'
+        'Die Kalender werden zweimal täglich '
+        '– gegen 8 Uhr und gegen 16 Uhr – '
+        'mit den Sitzungsterminen im offiziellen Dokumentationssystem '
+        'der Bezirksverordnetenversammlungen '
+        'abgeglichen und aktualisiert.'
+    '</small></p>'
+    '<p><small>'
+        'Ich freue mich über Anregungen per '
+        'Email <em>helge at elchenberg dot me</em> oder '
+        'Twitter <a href="https://twitter.com/elchenberg">'
+        'twitter.com/elchenberg</a>.'
+    '</small></p>'
+    '</header>'
+    '<main>%s</main>'
+    '</body>'
+    '</html>'
+)
+SECT_TEMPLATE = (
+    '<section>'
+    '<h2>%s</h2>'
+    '<ul>%s</ul>'
+    '</section>'
+)
+ITEM_TEMPLATE = (
+    '<li>'
+    '<a href="%s">%s</a>'
+    '</li>'
+)
 
 def main():
     with open('input.txt', 'r') as textfile:
@@ -262,18 +313,13 @@ def main():
                     icsfile.write(calendar.ics())
                 html_data[b_name].append([filename, c_name])
 
-    page_title = ('Gremienkalender der Berliner '+
-                  'Bezirksverordnetenversammlungen')
-    page_help = ('iCalendar-Dateien (.ics) zum Herunterladen oder '+
-                 'Abonnieren')
     html_sections = ''
     for borough in sorted(html_data):
         items = html_data[borough]
         items = ''.join([ITEM_TEMPLATE % (a, t) for a, t in items])
         section = SECT_TEMPLATE % (borough, items)
         html_sections += section
-    html_string = HTML_TEMPLATE % (page_title, page_title,
-                                   page_help, html_sections)
+    html_string = HTML_TEMPLATE % html_sections
     with open('index.html', 'w') as htmlfile:
         htmlfile.write(html_string)
 
