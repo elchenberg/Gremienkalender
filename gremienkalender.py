@@ -190,7 +190,7 @@ HTML_TEMPLATE = (
     '</p>'
     '<p><small>'
         'Die Kalender werden zweimal täglich '
-        '– gegen 8 Uhr und gegen 16 Uhr – '
+        '– gegen 10 Uhr und gegen 16 Uhr – '
         'mit den Sitzungsterminen im offiziellen Dokumentationssystem '
         'der Bezirksverordnetenversammlungen '
         'abgeglichen und aktualisiert.'
