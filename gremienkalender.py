@@ -167,7 +167,7 @@ HTML_TEMPLATE = (
     '</title>'
     '<style>'
     'html{font-family:Montserrat,Verdana,Geneva,sans-serif;'
-        'hyphens:auto}'
+        'overflow-wrap:break-word;hyphens:auto}'
     'body{max-width:720px;margin:0 auto;padding:2% 4%}'
     'h1,h2{font-family:Merriweather,Georgia,serif}'
     'ul{list-style-type:none}'
