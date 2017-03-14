@@ -210,13 +210,17 @@ HTML_TEMPLATE = (
 )
 SECT_TEMPLATE = (
     '<section>'
-    '<h2>%s</h2>'
+    '<h2 id="%s">%s <a href=#%s>¶</a></h2>'
     '<ul>%s</ul>'
     '</section>'
 )
 ITEM_TEMPLATE = (
     '<li>'
-    '<a href="%s">%s</a>'
+    '<a href="%s">%s [https]</a> '
+    '<script>'
+    'var href=location.href.replace("https", "webcal");'
+    'document.write(\'<a href="\'+href+\'%s\'+\'">[webcal]</a>\');'
+    '</script>'
     '</li>'
 )
 
@@ -317,8 +321,11 @@ def main():
     html_sections = ''
     for borough in sorted(html_data):
         items = html_data[borough]
-        items = ''.join([ITEM_TEMPLATE % (a, t) for a, t in items])
-        section = SECT_TEMPLATE % (borough, items)
+        items = ''.join([ITEM_TEMPLATE % (a, t, a) for a, t in items])
+        section = SECT_TEMPLATE % (get_borough_slug(borough),
+                                   borough,
+                                   get_borough_slug(borough),
+                                   items)
         html_sections += section
     html_string = HTML_TEMPLATE % html_sections
     with open('index.html', 'w') as htmlfile:
