@@ -30,7 +30,6 @@ class Calendar():
         ics.append('PRODID:-//elchenberg.me//Gremienkalender 1.0//DE')
         ics.append('VERSION:2.0')
         ics.append('CALSCALE:GREGORIAN')
-        ics.append('METHOD:PUBLISH')
         ics.append('X-WR-CALNAME:BVV %s: %s' % (self.borough,
                                                 self.committee))
         ics.append('X-WR-TIMEZONE:Europe/Berlin')
@@ -72,7 +71,6 @@ class Event():
             ics.append('URL:%s' % self.url)
         else:
             ics.append('DESCRIPTION:%s' % self.description)
-        ics.append('METHOD:PUBLISH')
         ics.append('END:VEVENT')
         return '\r\n'.join(ics)
 
