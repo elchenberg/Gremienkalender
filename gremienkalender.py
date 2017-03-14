@@ -27,10 +27,13 @@ class Calendar():
             return None
         ics = []
         ics.append('BEGIN:VCALENDAR')
+        ics.append('PRODID:-//elchenberg.me//Gremienkalender 1.0//DE')
         ics.append('VERSION:2.0')
-        ics.append('PRODID:https://elchenberg.me')
+        ics.append('CALSCALE:GREGORIAN')
+        ics.append('METHOD:PUBLISH')
         ics.append('X-WR-CALNAME:BVV %s: %s' % (self.borough,
                                                 self.committee))
+        ics.append('X-WR-TIMEZONE:Europe/Berlin')
         ics.append('BEGIN:VTIMEZONE')
         ics.append('TZID:Europe/Berlin')
         ics.append('BEGIN:DAYLIGHT')
