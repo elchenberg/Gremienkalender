@@ -72,6 +72,7 @@ class Event():
             ics.append('URL:%s' % self.url)
         else:
             ics.append('DESCRIPTION:%s' % self.description)
+        ics.append('METHOD:PUBLISH')
         ics.append('END:VEVENT')
         return '\r\n'.join(ics)
 
