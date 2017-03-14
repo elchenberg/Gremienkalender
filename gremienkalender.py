@@ -172,7 +172,7 @@ HTML_TEMPLATE = (
         'overflow-wrap:break-word;hyphens:auto}'
     'body{max-width:720px;margin:0 auto;padding:2% 4%}'
     'h1,h2{font-family:Merriweather,Georgia,serif}'
-    'ul{list-style-type:none}'
+    'ul{list-style-type:none;padding-left:0}'
     'li{margin-top:1em}'
     'a{text-decoration:none;color:#158}'
     'a:hover{text-decoration:underline}'
