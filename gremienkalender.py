@@ -133,7 +133,6 @@ def extract_vevent_agenda(html):
             continue
 
         subject = subject.replace('\n', ' – ')
-        number = '{0:>5}'.format(number)
 
         document, link = '', ''
         if len(row[6]):
@@ -142,11 +141,11 @@ def extract_vevent_agenda(html):
 
         if document:
             if link:
-                agenda.append('{0} {1}: {2}\\n{3}'.format(number, document, subject, link))
+                agenda.append('%s: %s %s %s' % (number, document, subject, link))
             else:
-                agenda.append('{0} {1}: {2}'.format(number, document, subject))
+                agenda.append('%s: %s %s' % (number, document, subject))
         else:
-            agenda.append('{0} {1}'.format(number, subject))
+            agenda.append('%s: %s' % (number, subject))
 
     agenda_string = '\\n'.join(agenda)
     return agenda_string
@@ -304,11 +303,6 @@ def write_vcalendar_file(vcalendar):
     vcalendar_string = string.Template(vcalendar_template)
     vcalendar_string = vcalendar_string.safe_substitute(vcalendar)
 
-    # Wrapping doesn't work with all lines yet.
-    # Especially lines with umlauts get to long.
-    # Lines should be wrapped after 75 OCTETS while python's
-    # textwrap wraps after a specified number of unicode
-    # characters.
     vcalendar_string = wrap_lines(vcalendar_string)
 
     vcalendar_file = '%s-%03d.ics' % (
