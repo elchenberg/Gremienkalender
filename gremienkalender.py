@@ -261,21 +261,27 @@ def extract_vcalendar(html):
 
 def wrap_lines(text):
     """Wrap a lines of given text to a length of 70 characters."""
-    width = 70
+    width = 75
     wrapped_lines = []
-    wrapper = textwrap.TextWrapper(width=width,
-                                   replace_whitespace=False,
-                                   drop_whitespace=False,
-                                   initial_indent='',
-                                   subsequent_indent=' ',
-                                   break_on_hyphens=False)
     text_lines = text.split('\r\n')
     for line in text_lines:
         if len(line) <= width:
             wrapped_lines.append(line)
         else:
-            wrapped_lines += wrapper.wrap(line)
-    return '\r\n'.join(wrapped_lines)
+            first = True
+            while line:
+                nonascii = [c for c in line[:width] if c not in string.printable]
+                nonasciiwidth = len(''.join(nonascii).encode('utf-8'))
+                if first:
+                    wrapped_lines.append(line[:width-nonasciiwidth])
+                    line = line[width-nonasciiwidth:]
+                    first = False
+                    width -= 1
+                else:
+                    wrapped_lines.append(' '+line[:width-nonasciiwidth])
+                    line = line[width-nonasciiwidth:]
+    wrapped_text = '\r\n'.join(wrapped_lines)
+    return wrapped_text
 
 def write_vcalendar_file(vcalendar):
     """Create iCalendar data format strings and write them to files."""
@@ -307,7 +313,7 @@ def write_vcalendar_file(vcalendar):
     # Lines should be wrapped after 75 OCTETS while python's
     # textwrap wraps after a specified number of unicode
     # characters.
-    #vcalendar_string = wrap_lines(vcalendar_string)
+    vcalendar_string = wrap_lines(vcalendar_string)
 
     vcalendar_file = '%s-%03d.ics' % (
         vcalendar['uid'].split('.')[1],
