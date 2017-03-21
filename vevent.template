@@ -1,0 +1,11 @@
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${dtstamp}
+DTSTART;TZID=Europe/Berlin:${dtstart}
+SUMMARY:${summary}
+DESCRIPTION:${description}
+CATEGORIES:MEETING
+CLASS:PUBLIC
+LOCATION:${location}
+URL:${url}
+END:VEVENT
