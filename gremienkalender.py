@@ -16,7 +16,7 @@ import zlib
 
 import lxml.html
 
-logging.basicConfig(filename='debug.log',
+logging.basicConfig(filename='.debug.log',
                     filemode='w',
                     format='%(filename)s:%(lineno)d:%(funcName)s - %(message)s',
                     level=logging.DEBUG)
