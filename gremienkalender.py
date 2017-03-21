@@ -75,7 +75,7 @@ class Event():
         return '\r\n'.join(ics)
 
 REQUEST_WAIT = 3
-SESSION = http.client.HTTPSConnection('www.berlin.de', timeout=6)
+SESSION = http.client.HTTPConnection('www.berlin.de', timeout=6)
 request_time = time.time()
 
 def get_response_text(url):
