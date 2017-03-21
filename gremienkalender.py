@@ -23,7 +23,7 @@ logging.basicConfig(filename='.debug.log',
 
 HOST = 'www.berlin.de'
 SESSION = http.client.HTTPSConnection(HOST)
-REQUEST_DELAY = 5
+REQUEST_DELAY = 3
 REQUEST_HEADERS = {'Connection': 'keep-alive', 'Accept-Encoding': 'gzip'}
 
 def read_configuration(filename):
@@ -46,12 +46,13 @@ def get_response_content(url):
     time.sleep(REQUEST_DELAY)
     SESSION.request('GET', url, headers=REQUEST_HEADERS)
     response = SESSION.getresponse()
-    content = response.read()
 
     if not response.status in range(200, 400):
         text = 'Request unsuccessful: %s %s'
         print(text % (response.status, url))
         return None
+
+    content = response.read()
 
     if response.getheader('Set-Cookie'):
         cookies = response.getheader('Set-Cookie')
