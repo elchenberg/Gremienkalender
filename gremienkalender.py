@@ -151,8 +151,8 @@ def extract_vevent_agenda(html):
         else:
             agenda.append('{0} {1}'.format(number, subject))
 
-    agenda = '\\n'.join(agenda)
-    return agenda
+    agenda_string = '\\n'.join(agenda)
+    return agenda_string
 
 def extract_vevent_details(html):
     """Extract meeting location, room & agenda and return a list of strings."""
@@ -209,7 +209,7 @@ def extract_vevent(row, vcalendar):
         if details.get('Anlass') or details.get('Status'):
             vevent['description'] += '\\n\\nArt der Sitzung: '
             if details.get('Anlass') or details.get('Status'):
-                vevent['description'] += ', '.join((details['Anlass'],details['Status']))
+                vevent['description'] += ', '.join((details['Anlass'], details['Status']))
             elif details.get('Status'):
                 vevent['description'] += details['Status']
             elif details.get('Anlass'):
@@ -245,7 +245,7 @@ def extract_vcalendar(html):
     vcalendar['gremium'] = vcalendar['gremium'].split(' im Zeitraum')[0]
 
     vcalendar['uid'] = '%03d.%s.berlin.de' % (
-        int(vcalendar['url'].split('=',1)[1]),
+        int(vcalendar['url'].split('=', 1)[1]),
         borough_slug_from_url(vcalendar['url'])
     )
 
@@ -301,11 +301,11 @@ def write_vcalendar_file(vcalendar):
     vcalendar_string = string.Template(vcalendar_template)
     vcalendar_string = vcalendar_string.safe_substitute(vcalendar)
 
-    # TODO: Wrapping doesn't work with all lines yet.
-    #       Especially lines with umlauts get to long.
-    #       Lines should be wrapped after 75 OCTETS while python's
-    #       textwrap wraps after a specified number of unicode
-    #       characters.
+    # Wrapping doesn't work with all lines yet.
+    # Especially lines with umlauts get to long.
+    # Lines should be wrapped after 75 OCTETS while python's
+    # textwrap wraps after a specified number of unicode
+    # characters.
     #vcalendar_string = wrap_lines(vcalendar_string)
 
     vcalendar_file = '%s-%03d.ics' % (
