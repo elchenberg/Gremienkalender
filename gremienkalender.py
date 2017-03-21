@@ -1,335 +1,341 @@
 # !/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""Crawl and parse calendars of the Berlin Councils' committees.
 
+Crawl and parse calendars of the Berlin Councils' committees and
+convert forthcoming committee meetings to iCalendar data format and
+write them to one iCalendar file per committee."""
+
+import configparser
 import http.client
+import logging
+import string
+import textwrap
 import time
 import zlib
 
 import lxml.html
 
-BOROUGH_NAMES = ['Mitte', 'Friedrichshain-Kreuzberg', 'Pankow',
-                 'Charlottenburg-Wilmersdorf', 'Spandau',
-                 'Steglitz-Zehlendorf', 'Tempelhof-Schöneberg',
-                 'Neukölln', 'Treptow-Köpenick', 'Marzahn-Hellersdorf',
-                 'Lichtenberg', 'Reinickendorf']
-BOROUGH_SLUGS = [b.lower().replace('ö', 'oe') for b in BOROUGH_NAMES]
-BOROUGH_ID_DICT = dict(zip(BOROUGH_SLUGS, range(1,13)))
+logging.basicConfig(filename='debug.log',
+                    filemode='w',
+                    format='%(filename)s:%(lineno)d:%(funcName)s - %(message)s',
+                    level=logging.DEBUG)
 
-class Calendar():
-    def __init__(self):
-        self.events = []
+HOST = 'www.berlin.de'
+SESSION = http.client.HTTPSConnection(HOST)
+REQUEST_DELAY = 5
+REQUEST_HEADERS = {'Connection': 'keep-alive', 'Accept-Encoding': 'gzip'}
 
-    def add_event(self, event):
-        self.events.append(event)
+def read_configuration(filename):
+    """Attempt to read and parse configuration data from *filename*.
 
-    def ics(self):
-        if not self.events:
-            return None
-        ics = []
-        ics.append('BEGIN:VCALENDAR')
-        ics.append('PRODID:-//elchenberg.me//Gremienkalender 1.0//DE')
-        ics.append('VERSION:2.0')
-        ics.append('CALSCALE:GREGORIAN')
-        ics.append('X-WR-CALNAME:BVV %s: %s' % (self.borough,
-                                                self.committee))
-        ics.append('X-WR-TIMEZONE:Europe/Berlin')
-        ics.append('BEGIN:VTIMEZONE')
-        ics.append('TZID:Europe/Berlin')
-        ics.append('BEGIN:DAYLIGHT')
-        ics.append('TZOFFSETFROM:+0100')
-        ics.append('TZOFFSETTO:+0200')
-        ics.append('TZNAME:CEST')
-        ics.append('DTSTART:19700329T020000')
-        ics.append('RRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=-1SU;BYMONTH=3')
-        ics.append('END:DAYLIGHT')
-        ics.append('BEGIN:STANDARD')
-        ics.append('TZOFFSETFROM:+0200')
-        ics.append('TZOFFSETTO:+0100')
-        ics.append('TZNAME:CET')
-        ics.append('DTSTART:19701025T030000')
-        ics.append('RRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=-1SU;BYMONTH=10')
-        ics.append('END:STANDARD')
-        ics.append('END:VTIMEZONE')
-        for event in self.events:
-            ics.append(event.ics())
-        ics.append('END:VCALENDAR')
-        return '\r\n'.join(ics)
+    *filename* defaults to '.gremienkalender.conf'.
+    When the file doesn't exist, return an empty dictionary.
+    Otherwise, return a dictionary of name, value pairs."""
+    try:
+        config = configparser.ConfigParser()
+        with open(filename, 'r') as conf:
+            config.read_file(conf)
+        return dict(config.items('DEFAULT'))
+    except FileNotFoundError:
+        return {}
 
-class Event():
-    def __init__(self):
-        self.url = None
-
-    def ics(self):
-        ics = []
-        ics.append('BEGIN:VEVENT')
-        ics.append('UID:%s' % self.uid)
-        ics.append('DTSTAMP:%s' % self.dtstamp)
-        ics.append('DTSTART;TZID=Europe/Berlin:%s' % self.dtstart)
-        ics.append('SUMMARY:%s' % self.summary)
-        if self.url:
-            ics.append('DESCRIPTION:%s\\n%s' % (self.description, self.url))
-            ics.append('URL:%s' % self.url)
-        else:
-            ics.append('DESCRIPTION:%s' % self.description)
-        ics.append('END:VEVENT')
-        return '\r\n'.join(ics)
-
-REQUEST_WAIT = 3
-SESSION = http.client.HTTPConnection('www.berlin.de', timeout=6)
-request_time = time.time()
-
-def get_response_text(url):
-    global request_time
-
-    elapsed_time = time.time() - request_time
-    if elapsed_time < REQUEST_WAIT:
-        time.sleep(REQUEST_WAIT - elapsed_time)
-
-    SESSION.request('GET', url, headers={'Accept-Encoding': 'gzip'})
-    print('GET', url)
+def get_response_content(url):
+    """Return the *url*s' response body as an lxml.html.HtmlElement."""
+    logging.debug(url)
+    time.sleep(REQUEST_DELAY)
+    SESSION.request('GET', url, headers=REQUEST_HEADERS)
     response = SESSION.getresponse()
-    request_time = time.time()
+    content = response.read()
 
-    # assert response.status == 200
-    # assert response.getheader('Content-Encoding') == 'gzip'
+    if not response.status in range(200, 400):
+        text = 'Request unsuccessful: %s %s'
+        print(text % (response.status, url))
+        return None
 
-    gzip_data = response.read()
-
-    # Tested decompression using different window size and buffer size values.
-    # The only working window size values are 31 and 47 so I am going for 47
-    # because it is in the range where the logarithm 'automatically accepts
-    # either the zlib or gzip format'.
-    # As for buffer size it seems to be best to go with the default value.
-    # https://docs.python.org/3/library/zlib.html#zlib.decompress
-    raw_data = zlib.decompress(gzip_data, 47)
+    if response.getheader('Set-Cookie'):
+        cookies = response.getheader('Set-Cookie')
+        cookies = cookies.split(',')
+        cookies = [cookie.split(';')[0] for cookie in cookies]
+        cookies = [cookie.strip() for cookie in cookies]
+        cookies = '; '.join(cookies)
+        REQUEST_HEADERS['Cookie'] = cookies
 
     try:
-        response_text = raw_data.decode('latin-1', 'strict')
+        content = zlib.decompress(content, 47)
+    except zlib.error:
+        pass
+    try:
+        content = content.decode('windows-1252', 'strict')
     except UnicodeDecodeError:
-        response_text = raw_data.decode('windows-1252', 'strict')
-    return response_text
+        content = content.decode('utf-8', 'replace')
 
-def get_date_query():
+    content = lxml.html.fromstring(content, base_url=url)
+    content.make_links_absolute()
+
+    return content
+
+def extract_calendar_links(content):
+    """Return a list of calendar links extracted from html content."""
+    query_values = set()
+    selector = '//select[@id="GRA"]/option'
+    form_select = content.xpath(selector)
+    for option in form_select:
+        text_inactive = 'inaktiv' in option.text_content()
+        class_inactive = option.get('class') == 'calWeek'
+        if text_inactive or class_inactive:
+            continue
+        option_value = int(option.get('value'))
+        query_values.add(option_value)
+
+    if not query_values:
+        return []
+
+    base = content.base_url
+    calendar_links = ['%s?GRA=%s' % (base, v) for v in query_values]
+    return calendar_links
+
+def date_range_query():
+    """Return an URL query string."""
     today = time.localtime()
     year, month = today[0:2]
-    template = 'YYV=%s&MMV=%s&YYB=%s&MMB=%s'
-    date_query = template % (year, month, year, month + 1)
-    if month > 12:
-        date_query = template % (year, month, year + 1, 1)
-    return date_query
-
-def is_borough_id(obj):
-    try:
-        obj = int(obj)
-        if not 1 <= obj <= 12:
-            raise ValueError()
-        return True
-    except ValueError:
-        return False
-
-def get_borough_id(obj):
-    if is_borough_id(obj):
-        return int(obj)
-    string = str(obj)
-    string = string.lower()
-    string = string.replace('ö', 'oe')
-    error_message = 'No known/valid borough found in \'%s\'.' % str(obj)
-    try:
-        return BOROUGH_ID_DICT[string]
-    except KeyError:
-        # More lines of code but also
-        # more readable than a next() statement:
-        for borough in BOROUGH_ID_DICT:
-            if borough in string:
-                return BOROUGH_ID_DICT[borough]
-        raise ValueError(error_message)
-
-def get_borough_name(obj):
-    if is_borough_id(obj):
-        return BOROUGH_NAMES[int(obj)-1]
+    query_template = '&YYV=%s&MMV=%s&YYB=%s&MMB=%s'
+    if month < 11:
+        return query_template % (year, month, year, month + 2)
     else:
-        return BOROUGH_NAMES[get_borough_id(obj)-1]
+        return query_template % (year, month, year + 1, month - 10)
 
-def get_borough_slug(obj):
-    if is_borough_id(obj):
-        return BOROUGH_SLUGS[int(obj)-1]
-    else:
-        return BOROUGH_SLUGS[get_borough_id(obj)-1]
+def borough_slug_from_url(url):
+    """Convert url into borough slug and return as string."""
+    return url.split('/')[3][3:]
 
-HTML_TEMPLATE = (
-    '<!DOCTYPE html>'
-    '<html lang="de">'
-    '<head>'
-    '<meta charset="UTF-8">'
-    '<meta name="viewport" '
-        'content="width=device-width, initial-scale=1.0">'
-    '<title>'
-        'Gremienkalender der Berliner '
-        'Bezirksverordnetenversammlungen'
-    '</title>'
-    '<style>'
-    'html{font-family:Montserrat,Verdana,Geneva,sans-serif;'
-        'overflow-wrap:break-word;hyphens:auto}'
-    'body{max-width:720px;margin:0 auto;padding:2% 4%}'
-    'h1,h2{font-family:Merriweather,Georgia,serif}'
-    'ul{list-style-type:none;padding-left:0}'
-    'li{margin-top:1em}'
-    'a{text-decoration:none;color:#158}'
-    'a:hover{text-decoration:underline}'
-    '</style>'
-    '</head>'
-    '<body>'
-    '<header>'
-    '<h1>'
-        'Gremienkalender der Berliner '
-        'Bezirksverordnetenversammlungen'
-    '</h1>'
-    '<p>'
-        'Sitzungskalender der Gremien der '
-        'Berliner Bezirksverordnetenversammlungen '
-        'als iCalender-Dateien (.ics) '
-        'zum Abspeichern oder Abonnieren.'
-    '</p>'
-    '<p><small>'
-        'Die Kalender werden automatisiert zweimal täglich '
-        '– gegen 10 Uhr und gegen 16 Uhr – '
-        'mit den Sitzungsterminen im offiziellen Dokumentationssystem '
-        'der Bezirksverordnetenversammlungen '
-        'abgeglichen und aktualisiert. '
-    '</small></p>'
-    '<p><small>'
-        'Ich freue mich über Anregungen per '
-        'Email <em>helge at elchenberg dot me</em> oder '
-        'Twitter <a href="https://twitter.com/elchenberg">'
-        'twitter.com/elchenberg</a>.'
-    '</small></p>'
-    '</header>'
-    '<main>%s</main>'
-    '</body>'
-    '</html>'
-)
-SECT_TEMPLATE = (
-    '<section>'
-    '<h2 id="%s">%s <a href=#%s>¶</a></h2>'
-    '<ul>%s</ul>'
-    '</section>'
-)
-ITEM_TEMPLATE = (
-    '<li>'
-    '<a href="%s">%s [https]</a> '
-    '<script>'
-    'var href=location.href.replace("https", "webcal");'
-    'document.write(\'<a href="\'+href+\'%s\'+\'">[webcal]</a>\');'
-    '</script>'
-    '</li>'
-)
+def borough_name_from_url(url):
+    """Convert url into borough name and return as string."""
+    borough = borough_slug_from_url(url)
+    borough = borough.split('-')
+    borough = [element.capitalize() for element in borough]
+    borough = '-'.join(borough)
+    borough = borough.replace('oe', 'ö')
+    return borough
 
-def main():
-    with open('input.txt', 'r') as textfile:
-        borough_urls = [line.strip() for line in textfile.readlines()]
-
-    boroughs = []
-    for borough_url in borough_urls:
-        response_text = get_response_text(borough_url)
-        html_parser = lxml.html.fromstring(response_text)
-        # html_parser.make_links_absolute(url)
-
-        committee_ids = set()
-        committee_list = html_parser.cssselect('#GRA')[0]
-        for element in committee_list:
-            text_inactive = 'inaktiv' in element.text_content()
-            class_inactive = element.get('class') == 'calWeek'
-            if text_inactive or class_inactive:
-                continue
-            committee_id = int(element.get('value'))
-            committee_ids.add(committee_id)
-
-        if not committee_ids:
+def extract_vevent_agenda(html):
+    """Extract meeting agenda from html content and return it as string."""
+    agenda = []
+    for row in html.xpath('//tr[@class="zl11" or @class="zl12"]'):
+        if not len(row) == 8:
+            continue
+        number = row[0][0].text_content()
+        number = number.strip('Ö')
+        number = number.strip()
+        subject = row[3].text_content().strip()
+        if not (subject and number):
             continue
 
-        boroughs.append({
-            'slug': get_borough_slug(borough_url),
-            'name': get_borough_name(borough_url),
-            'id': get_borough_id(borough_url),
-            'url': borough_url,
-            'committees': sorted(committee_ids)
-        })
+        subject = subject.replace('\n', ' – ')
+        number = number.split('.', 1)
+        if len(number) == 2:
+            number = '{0:>3}.{1:<3}'.format(*number)
+        else:
+            number = '{0:>3}    '.format(*number)
 
-    html_data = {}
-    date_query = get_date_query()
-    for borough in boroughs:
-        b_name = borough['name']
-        b_slug = borough['slug']
-        b_url = borough['url']
+        document, link = '', ''
+        if len(row[6]):
+            document = row[6][0].text_content()
+            link = row[6][0].get('href')
 
-        html_data[b_name] = []
+        if document:
+            if link:
+                agenda.append('{0} {1}: {2} <{3}>'.format(number, document, subject, link))
+            else:
+                agenda.append('{0} {1}: {2}'.format(number, document, subject))
+        else:
+            agenda.append('{0} {1}'.format(number, subject))
 
-        for c_id in borough['committees']:
-            c_url = '%s?GRA=%s' % (b_url, c_id)
+    agenda = '\\n'.join(agenda)
+    return agenda
 
-            url = '%s&%s' % (c_url, date_query)
-            response_text = get_response_text(url)
-            html_parser = lxml.html.fromstring(response_text)
-            html_parser.make_links_absolute(c_url)
+def extract_vevent_details(html):
+    """Extract meeting location, room & agenda and return a list of strings."""
+    details = {}
+    for key in ['Raum', 'Ort', 'Status', 'Anlass']:
+        value = html.xpath('.//td[text()="%s:"]/following-sibling::td' % key)
+        if not value:
+            continue
+        details[key] = value[0].text_content()
+    details['Tagesordnung'] = extract_vevent_agenda(html)
+    return details
 
-            calendar_rows = html_parser.cssselect('.zl12')
-            calendar_rows += html_parser.cssselect('.zl11')
-            if not calendar_rows:
-                continue
+def extract_vevent(row, vcalendar):
+    """Extract event information from html table row and return vevent dict."""
+    dtdate = row[0].text_content().strip()
+    dttime = row[1].text_content().strip()
+    if not (dtdate and dttime):
+        return {}
 
-            c_name = html_parser.cssselect('.tl1')[0][0].text_content()
-            c_name = c_name.split('Sitzungen des Gremiums ')[1]
-            c_name = c_name.split(' im Zeitraum')[0]
+    vevent = {}
+    vevent['dtstart'] = '%s %s' % (dtdate[4:], dttime[:5])
+    vevent['dtstart'] = time.strptime(vevent['dtstart'], '%d.%m.%Y %H:%M')
+    vevent['dtstart'] = time.strftime('%Y%m%dT%H%M%S', vevent['dtstart'])
 
-            calendar = Calendar()
-            calendar.borough = b_name
-            calendar.committee = c_name
-            calendar.url = c_url
-            for row in calendar_rows:
-                event_date = row[0].text_content().strip()
-                event_time = row[1].text_content().strip()
-                if not (event_date and event_time):
-                    continue
-                datetime = '%s %s' % (event_date[4:], event_time[:5])
-                datetime = time.strptime(datetime, '%d.%m.%Y %H:%M')
+    vevent['uid'] = '%s@%s' % (vevent['dtstart'], vcalendar['uid'])
 
-                event = Event()
-                event.summary = '%s: %s' % (b_name, c_name)
-                event.description = row[3].text_content().strip()
-                if len(row[3]):
-                    event.url = row[3][0].get('href')
+    vevent['dtstamp'] = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
 
-                event.dtstart = time.strftime('%Y%m%dT%H%M%S', datetime)
-                event.duration = 'PT2H'
+    vevent['summary'] = '%s: %s' % (vcalendar['bezirk'], vcalendar['gremium'])
 
-                now_utc = time.localtime()
-                event.dtstamp = time.strftime('%Y%m%dT%H%M%SZ', now_utc)
+    vevent['description'] = row[3].text_content().strip()
 
-                uid_domain = '%03d.%s.berlin.de' % (c_id, b_slug)
-                uid_local = event.dtstart
-                event.uid = '%s@%s' % (uid_local, uid_domain)
+    vevent['url'] = ''
+    vevent['location'] = ''
 
-                calendar.add_event(event)
+    containseventurl = (
+        len(row[3]) and
+        row[3][0].get('href') and
+        row[3][0].get('href').startswith('https://www.berlin.de/ba-')
+    )
+    if containseventurl:
+        vevent['url'] = row[3][0].get('href')
+        vevent['description'] += '\\n' + vevent['url']
 
-            if calendar.ics():
-                filename_template = '%s-%03d.ics'
-                filename = filename_template % (b_slug, c_id)
-                with open(filename, 'w') as icsfile:
-                    icsfile.write(calendar.ics())
-                html_data[b_name].append([filename, c_name])
+        html = get_response_content(vevent['url'])
+        details = extract_vevent_details(html)
 
-    html_sections = ''
-    for borough in sorted(html_data):
-        items = html_data[borough]
-        items = ''.join([ITEM_TEMPLATE % (a, t, a) for a, t in items])
-        section = SECT_TEMPLATE % (get_borough_slug(borough),
-                                   borough,
-                                   get_borough_slug(borough),
-                                   items)
-        html_sections += section
-    html_string = HTML_TEMPLATE % html_sections
-    with open('index.html', 'w') as htmlfile:
-        htmlfile.write(html_string)
+        if details.get('Ort'):
+            if details.get('Raum'):
+                vevent['location'] = '%s (%s)' % (details['Ort'], details['Raum'])
+            else:
+                vevent['location'] = details['Ort']
+
+        if details.get('Anlass') or details.get('Status'):
+            vevent['description'] += '\\n\\nArt der Sitzung: '
+            if details.get('Anlass') or details.get('Status'):
+                vevent['description'] += ', '.join((details['Anlass'],details['Status']))
+            elif details.get('Status'):
+                vevent['description'] += details['Status']
+            elif details.get('Anlass'):
+                vevent['description'] += details['Anlass']
+
+        if details.get('Tagesordnung'):
+            vevent['description'] += '\\n\\nTagesordnung:\\n'
+            vevent['description'] += details['Tagesordnung']
+
+    vevent['description'] += '\\n\\nStand: '
+    vevent['description'] += time.strftime('%d.%m.%Y, %H:%M:%S', time.localtime())
+    vevent['description'] += '\\nQuelle: '
+    if vevent.get('url'):
+        vevent['description'] += vevent['url']
+    else:
+        vevent['description'] += vcalendar['url']
+    return vevent
+
+def extract_vcalendar(html):
+    """Return a list of committee meetings extracted from html content."""
+    vcalendar = {}
+
+    vcalendar['vevents'] = []
+
+    vcalendar['url'] = html.base_url
+    vcalendar['url'] = vcalendar['url'].split('&', 1)
+    vcalendar['url'] = vcalendar['url'][0]
+
+    vcalendar['bezirk'] = borough_name_from_url(vcalendar['url'])
+
+    vcalendar['gremium'] = html.xpath('//table[@class="tl1"]/tr[1]/th[1]/text()')[0]
+    vcalendar['gremium'] = vcalendar['gremium'].split('Sitzungen des Gremiums ')[1]
+    vcalendar['gremium'] = vcalendar['gremium'].split(' im Zeitraum')[0]
+
+    vcalendar['uid'] = '%03d.%s.berlin.de' % (
+        int(vcalendar['url'].split('=',1)[1]),
+        borough_slug_from_url(vcalendar['url'])
+    )
+
+    vcalendar['calname'] = 'BVV %s: %s' % (vcalendar['bezirk'], vcalendar['gremium'])
+
+    calendar_rows = html.xpath('//tr[@class="zl11" or @class="zl12"]')
+    for row in calendar_rows:
+        vevent = extract_vevent(row, vcalendar)
+        vcalendar['vevents'].append(vevent)
+
+    return vcalendar
+
+def wrap_lines(text):
+    """Wrap a lines of given text to a length of 70 characters."""
+    width = 70
+    wrapped_lines = []
+    wrapper = textwrap.TextWrapper(width=width,
+                                   replace_whitespace=False,
+                                   drop_whitespace=False,
+                                   initial_indent='',
+                                   subsequent_indent=' ',
+                                   break_on_hyphens=False)
+    text_lines = text.split('\r\n')
+    for line in text_lines:
+        if len(line) <= width:
+            wrapped_lines.append(line)
+        else:
+            wrapped_lines += wrapper.wrap(line)
+    return '\r\n'.join(wrapped_lines)
+
+def write_vcalendar_file(vcalendar):
+    """Create iCalendar data format strings and write them to files."""
+    with open('vevent.template', 'r') as template_file:
+        vevent_template = template_file.readlines()
+        vevent_template = [line.strip() for line in vevent_template]
+        vevent_template = '\r\n'.join(vevent_template)
+        vevent_template += '\r\n'
+    with open('vcalendar.template', 'r') as template_file:
+        vcalendar_template = template_file.readlines()
+        vcalendar_template = [line.strip() for line in vcalendar_template]
+        vcalendar_template = '\r\n'.join(vcalendar_template)
+        vcalendar_template += '\r\n'
+
+    vevents = vcalendar['vevents']
+    vcalendar['vevents'] = ''
+    if not vevents:
+        return False
+    for vevent in vevents:
+        vevent_string = string.Template(vevent_template)
+        vevent_string = vevent_string.safe_substitute(vevent)
+        vcalendar['vevents'] += vevent_string
+
+    vcalendar_string = string.Template(vcalendar_template)
+    vcalendar_string = vcalendar_string.safe_substitute(vcalendar)
+
+    # TODO: Wrapping doesn't work with all lines yet.
+    #       Especially lines with umlauts get to long.
+    #       Lines should be wrapped after 75 OCTETS while python's
+    #       textwrap wraps after a specified number of unicode
+    #       characters.
+    #vcalendar_string = wrap_lines(vcalendar_string)
+
+    vcalendar_file = '%s-%03d.ics' % (
+        vcalendar['uid'].split('.')[1],
+        int(vcalendar['uid'].split('.')[0])
+    )
+    with open(vcalendar_file, 'w') as icsfile:
+        icsfile.write(vcalendar_string)
+
+def main():
+    """The main function."""
+    config = read_configuration('.gremienkalender.conf')
+    if config.get('request_user_agent'):
+        REQUEST_HEADERS['User-Agent'] = config['request_user_agent']
+    if config.get('request_from_email'):
+        REQUEST_HEADERS['From'] = config['request_from_email']
+
+    with open('input.txt', 'r') as textfile:
+        input_urls = [line.strip() for line in textfile.readlines()]
+
+    for borough_url in input_urls:
+        html = get_response_content(borough_url)
+        calendar_links = extract_calendar_links(html)
+        for committee_url in calendar_links:
+            link = committee_url+date_range_query()
+            html = get_response_content(link)
+            vcalendar = extract_vcalendar(html)
+            if vcalendar:
+                write_vcalendar_file(vcalendar)
+    SESSION.close()
 
 if __name__ == '__main__':
     main()
