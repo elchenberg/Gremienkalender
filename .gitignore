@@ -1,8 +1,5 @@
-*.html
-*.css
-*.ics
-*.log
-*.conf
+ics/
+index.html
 
 # https://github.com/github/gitignore/blob/master/Python.gitignore
 

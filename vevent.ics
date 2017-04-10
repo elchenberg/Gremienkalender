@@ -1,0 +1,10 @@
+BEGIN:VEVENT
+UID:{uid}
+DTSTAMP:{dtstamp}
+DTSTART;TZID=Europe/Berlin:{dtstart}
+SUMMARY:{summary}
+DESCRIPTION:{description}
+LOCATION:{location}
+URL:{url}
+END:VEVENT
+

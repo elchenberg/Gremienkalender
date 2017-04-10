@@ -4,332 +4,291 @@
 
 Crawl and parse calendars of the Berlin Councils' committees and
 convert forthcoming committee meetings to iCalendar data format and
-write them to one iCalendar file per committee."""
+write them to one iCalendar file per committee.
+"""
 
-import configparser
 import http.client
-import logging
+import os
 import string
-import textwrap
 import time
 import zlib
 
 import lxml.html
 
-logging.basicConfig(filename='.debug.log',
-                    filemode='w',
-                    format='%(filename)s:%(lineno)d:%(funcName)s - %(message)s',
-                    level=logging.DEBUG)
-
 HOST = 'www.berlin.de'
 SESSION = http.client.HTTPSConnection(HOST)
-REQUEST_DELAY = 3
+REQUEST_DELAY = 2
 REQUEST_HEADERS = {'Connection': 'keep-alive', 'Accept-Encoding': 'gzip'}
+DTSTAMP = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+BOROUGH_NAMES = {
+    'ba-charlottenburg-wilmersdorf': 'Charlottenburg-Wilmersdorf',
+    'ba-friedrichshain-kreuzberg': 'Friedrichshain-Kreuzberg',
+    'ba-lichtenberg': 'Lichtenberg',
+    'ba-marzahn-hellersdorf': 'Marzahn-Hellersdorf',
+    'ba-mitte': 'Mitte',
+    'ba-neukoelln': 'Neukölln',
+    'ba-pankow': 'Pankow',
+    'ba-reinickendorf': 'Reinickendorf',
+    'ba-spandau': 'Spandau',
+    'ba-steglitz-zehlendorf': 'Steglitz-Zehlendorf',
+    'ba-tempelhof-schoeneberg': 'Tempelhof-Schöneberg',
+    'ba-treptow-koepenick': 'Treptow-Köpenick'
+}
 
-def read_configuration(filename):
-    """Attempt to read and parse configuration data from *filename*.
+def save_cookie(response):
+    """Find and save ALLRIS session cookies from server response if present."""
+    session_cookie = response.getheader('Set-Cookie')
+    if session_cookie:
+        session_cookie = session_cookie.split(';', 1)[0]
+        REQUEST_HEADERS['Cookie'] = session_cookie
 
-    *filename* defaults to '.gremienkalender.conf'.
-    When the file doesn't exist, return an empty dictionary.
-    Otherwise, return a dictionary of name, value pairs."""
+def decode_response(response_body):
+    """Decode response body and return a unicode string."""
     try:
-        config = configparser.ConfigParser()
-        with open(filename, 'r') as conf:
-            config.read_file(conf)
-        return dict(config.items('DEFAULT'))
-    except FileNotFoundError:
-        return {}
-
-def get_response_content(url):
-    """Return the *url*s' response body as an lxml.html.HtmlElement."""
-    logging.debug(url)
-    time.sleep(REQUEST_DELAY)
-    SESSION.request('GET', url, headers=REQUEST_HEADERS)
-    response = SESSION.getresponse()
-
-    if not response.status in range(200, 400):
-        text = 'Request unsuccessful: %s %s'
-        print(text % (response.status, url))
-        return None
-
-    content = response.read()
-
-    if response.getheader('Set-Cookie'):
-        cookies = response.getheader('Set-Cookie')
-        cookies = cookies.split(',')
-        cookies = [cookie.split(';')[0] for cookie in cookies]
-        cookies = [cookie.strip() for cookie in cookies]
-        cookies = '; '.join(cookies)
-        REQUEST_HEADERS['Cookie'] = cookies
-
-    try:
-        content = zlib.decompress(content, 47)
-    except zlib.error:
-        pass
-    try:
-        content = content.decode('windows-1252', 'strict')
+        response_body = response_body.decode('iso-8859-1', 'strict')
     except UnicodeDecodeError:
-        content = content.decode('utf-8', 'replace')
+        print('decoding iso-8859-1 failed')
+        try:
+            response_body = response_body.decode('iso-8859-15', 'strict')
+        except UnicodeDecodeError:
+            print('decoding iso-8859-15 failed, too')
+            response_body = response_body.decode('windows-1252', 'replace')
+    return response_body
 
-    content = lxml.html.fromstring(content, base_url=url)
-    content.make_links_absolute()
+def find_allriscontainer(response_body, base_url):
+    """Find allriscontainer div element in html page source string."""
+    response_body = response_body.split('s-->', 1)[1]
+    response_body = response_body.split('<!-- H', 1)[0]
+    html = lxml.html.fromstring(response_body, base_url=base_url)
+    for div in html.getiterator('div'):
+        if div.get('id') and div.get('id') == 'allriscontainer':
+            return div
 
-    return content
+def get_allriscontainer(url):
+    """Return the *url*s' response body as an lxml.html.HtmlElement."""
+    request_path = url.split('www.berlin.de', 1)[1]
+    time.sleep(REQUEST_DELAY)
+    SESSION.request('GET', request_path, headers=REQUEST_HEADERS)
+    response = SESSION.getresponse()
+    response_body = response.read()
+    if response.status == 200:
+        save_cookie(response)
+        response_body = zlib.decompress(response_body, 47)
+        response_body = decode_response(response_body)
+        return find_allriscontainer(response_body, url)
 
-def extract_calendar_links(content):
+def findall_calendars(allriscontainer):
     """Return a list of calendar links extracted from html content."""
-    query_values = set()
-    selector = '//select[@id="GRA"]/option'
-    form_select = content.xpath(selector)
-    for option in form_select:
-        text_inactive = 'inaktiv' in option.text_content()
-        class_inactive = option.get('class') == 'calWeek'
-        if text_inactive or class_inactive:
-            continue
-        option_value = int(option.get('value'))
-        query_values.add(option_value)
+    for select in allriscontainer.getiterator('select'):
+        if select.get('id') and select.get('id') == 'GRA':
+            values = set()
+            for option in select.getiterator('option'):
+                if not option.get('class') == 'calWeek':
+                    if not 'inaktiv' in option.text:
+                        value = option.get('value')
+                        value = int(value)
+                        values.add(value)
+            base = allriscontainer.base_url
+            values = sorted(values)
+            return ['{}?GRA={}'.format(base, value) for value in values]
 
-    if not query_values:
-        return []
-
-    base = content.base_url
-    calendar_links = ['%s?GRA=%s' % (base, v) for v in query_values]
-    return calendar_links
-
-def date_range_query():
+def date_range(months=3):
     """Return an URL query string."""
-    today = time.localtime()
-    year, month = today[0:2]
-    query_template = '&YYV=%s&MMV=%s&YYB=%s&MMB=%s'
-    if month < 11:
-        return query_template % (year, month, year, month + 2)
-    else:
-        return query_template % (year, month, year + 1, month - 10)
+    year_from, month_from, *_ = time.localtime()
+    year_to = year_from
+    month_to = month_from + months
+    while month_to > 12:
+        year_to += 1
+        month_to -= 12
+    template = 'YYV={}&MMV={}&YYB={}&MMB={}'
+    return template.format(year_from, month_from, year_to, month_to)
+DATE_RANGE = date_range()
+def find_borough_slug(url):
+    slug = url.split('/', 4)[3]
+    slug = slug[3:]
+    return slug
+def find_committee_id(url):
+    query_pairs = url.split('?', 1)[1]
+    query_pairs = query_pairs.split('&')
+    for pair in query_pairs:
+        name, value = pair.split('=', 1)
+        if name == 'GRA' and value.isdigit():
+            return int(value)
 
-def borough_slug_from_url(url):
-    """Convert url into borough slug and return as string."""
-    return url.split('/')[3][3:]
+def find_calendar_url(url):
+    calendar_url = url
+    calendar_url = calendar_url.split('&', 1)[0]
+    return calendar_url
 
-def borough_name_from_url(url):
-    """Convert url into borough name and return as string."""
-    borough = borough_slug_from_url(url)
-    borough = borough.split('-')
-    borough = [element.capitalize() for element in borough]
-    borough = '-'.join(borough)
-    borough = borough.replace('oe', 'ö')
-    return borough
+def find_calendar_uid(url):
+    borough = find_borough_slug(url)
+    committee = find_committee_id(url)
+    calendar_uid = borough + '-' + '%03d' % committee
+    calendar_uid = '%s-%03d' % (borough, committee)
+    calendar_uid = '{}-{:03d}'.format(borough, committee)
+    return calendar_uid
 
-def extract_vevent_agenda(html):
-    """Extract meeting agenda from html content and return it as string."""
-    agenda = []
-    for row in html.xpath('//tr[@class="zl11" or @class="zl12"]'):
-        if not len(row) == 8:
-            continue
-        number = row[0][0].text_content()
-        number = number.strip('Ö')
-        number = number.strip()
-        subject = row[3].text_content().strip()
-        if not (subject and number):
-            continue
+def find_calendar_borough(url):
+    calendar_borough = url
+    calendar_borough = calendar_borough.split('/', 4)[3]
+    calendar_borough = BOROUGH_NAMES[calendar_borough]
+    return calendar_borough
 
-        subject = subject.replace('\n', ' – ')
+def find_calendar_committee(allriscontainer):
+    cells = allriscontainer.getiterator('th')
+    for cell in cells:
+        if cell.get('colspan') == '6':
+            committee = cell.text_content()
+            committee = committee[23:].split(' im Zeitraum', 1)[0]
+            return committee
 
-        document, link = '', ''
-        if len(row[6]):
-            document = row[6][0].text_content()
-            link = row[6][0].get('href')
+def findall_tablerows_zl1n(allriscontainer):
+    for table in allriscontainer.getiterator('table'):
+        if table.get('class') == 'tl1':
+            tablerows = []
+            for row in table.getiterator('tr'):
+                if row.get('class') == 'zl11' or row.get('class') == 'zl12':
+                    tablerows.append(row)
+            return tablerows
 
-        if document:
-            if link:
-                agenda.append('%s: %s %s %s' % (number, document, subject, link))
-            else:
-                agenda.append('%s: %s %s' % (number, document, subject))
-        else:
-            agenda.append('%s: %s' % (number, subject))
+def find_event_dtstart(row):
+    date_text = row[0].text[4:]
+    time_text = row[1].text[:5]
+    if date_text.strip() and time_text.strip():
+        dtstart = (
+            int(date_text[6:10]),
+            int(date_text[3:5]),
+            int(date_text[0:2]),
+            int(time_text[0:2]),
+            int(time_text[3:5]),
+            0,
+            0,
+            0,
+            0
+        )
+        elapsed_time = (time.time() - time.mktime(dtstart))
+        one_day = 60*60*24
+        if elapsed_time < 1*one_day:
+            dtstart = time.strftime('%Y%m%dT%H%M%S', dtstart)
+            return dtstart
 
-    agenda_string = '\\n'.join(agenda)
-    return agenda_string
+def find_event_description(row):
+    try:
+        return row[3][0].text
+    except IndexError:
+        return row[3].text
 
-def extract_vevent_details(html):
-    """Extract meeting location, room & agenda and return a list of strings."""
-    details = {}
-    for key in ['Raum', 'Ort', 'Status', 'Anlass']:
-        value = html.xpath('.//td[text()="%s:"]/following-sibling::td' % key)
-        if not value:
-            continue
-        details[key] = value[0].text_content()
-    details['Tagesordnung'] = extract_vevent_agenda(html)
-    return details
+def find_event_url(row):
+    try:
+        href = row[3][0].get('href')
+        return 'https://{}{}'.format(HOST, href)
+    except IndexError:
+        return ''
 
-def extract_vevent(row, vcalendar):
-    """Extract event information from html table row and return vevent dict."""
-    dtdate = row[0].text_content().strip()
-    dttime = row[1].text_content().strip()
-    if not (dtdate and dttime):
-        return {}
+def findall_events(allriscontainer):
+    events = []
+    calendar_uid = find_calendar_uid(allriscontainer.base_url)
+    committee_name = find_calendar_committee(allriscontainer)
+    rows = findall_tablerows_zl1n(allriscontainer)
+    for row in rows:
+        event = {
+            'dtstamp': DTSTAMP,
+            'dtstart': find_event_dtstart(row),
+            'summary': committee_name,
+            'location': ''
+        }
+        if event.get('dtstart'):
+            event['description'] = find_event_description(row)
+            event['url'] = find_event_url(row)
+            event['uid'] = '{}-{}'.format(calendar_uid, event['dtstart'])
+            #if event['url']:
+                #event_page = get_allriscontainer(event['url'])
+            #    pass
+            events.append(event)
+    return events
 
-    vevent = {}
-    vevent['dtstart'] = '%s %s' % (dtdate[4:], dttime[:5])
-    vevent['dtstart'] = time.strptime(vevent['dtstart'], '%d.%m.%Y %H:%M')
-    vevent['dtstart'] = time.strftime('%Y%m%dT%H%M%S', vevent['dtstart'])
-
-    vevent['uid'] = '%s@%s' % (vevent['dtstart'], vcalendar['uid'])
-
-    vevent['dtstamp'] = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
-
-    vevent['summary'] = '%s: %s' % (vcalendar['bezirk'], vcalendar['gremium'])
-
-    vevent['description'] = row[3].text_content().strip()
-
-    vevent['url'] = ''
-    vevent['location'] = ''
-
-    containseventurl = (
-        len(row[3]) and
-        row[3][0].get('href') and
-        row[3][0].get('href').startswith('https://www.berlin.de/ba-')
-    )
-    if containseventurl:
-        vevent['url'] = row[3][0].get('href')
-        vevent['description'] += '\\n' + vevent['url']
-
-        html = get_response_content(vevent['url'])
-        details = extract_vevent_details(html)
-
-        if details.get('Ort'):
-            if details.get('Raum'):
-                vevent['location'] = '%s (%s)' % (details['Ort'], details['Raum'])
-            else:
-                vevent['location'] = details['Ort']
-
-        if details.get('Anlass') or details.get('Status'):
-            vevent['description'] += '\\n\\nArt der Sitzung: '
-            if details.get('Anlass') or details.get('Status'):
-                vevent['description'] += ', '.join((details['Anlass'], details['Status']))
-            elif details.get('Status'):
-                vevent['description'] += details['Status']
-            elif details.get('Anlass'):
-                vevent['description'] += details['Anlass']
-
-        if details.get('Tagesordnung'):
-            vevent['description'] += '\\n\\nTagesordnung:\\n'
-            vevent['description'] += details['Tagesordnung']
-
-    vevent['description'] += '\\n\\nStand: '
-    vevent['description'] += time.strftime('%d.%m.%Y, %H:%M:%S', time.localtime())
-    vevent['description'] += '\\nQuelle: '
-    if vevent.get('url'):
-        vevent['description'] += vevent['url']
-    else:
-        vevent['description'] += vcalendar['url']
-    return vevent
-
-def extract_vcalendar(html):
+def extract_vcalendar(allriscontainer):
     """Return a list of committee meetings extracted from html content."""
-    vcalendar = {}
+    vcalendar = {
+        'vevents': findall_events(allriscontainer),
+    }
+    if vcalendar.get('vevents'):
+        base_url = allriscontainer.base_url
+        vcalendar['url'] = find_calendar_url(base_url)
+        vcalendar['uid'] = find_calendar_uid(base_url)
+        vcalendar['borough'] = find_calendar_borough(base_url)
+        vcalendar['committee'] = find_calendar_committee(allriscontainer)
+        vcalendar['name'] = '{}: {}'.format(
+            vcalendar['borough'],
+            vcalendar['committee']
+        )
+        return vcalendar
 
-    vcalendar['vevents'] = []
+def fold_content_lines(content):
+    """Fold lines of *content* string to a length of 75 octets.
 
-    vcalendar['url'] = html.base_url
-    vcalendar['url'] = vcalendar['url'].split('&', 1)
-    vcalendar['url'] = vcalendar['url'][0]
-
-    vcalendar['bezirk'] = borough_name_from_url(vcalendar['url'])
-
-    vcalendar['gremium'] = html.xpath('//table[@class="tl1"]/tr[1]/th[1]/text()')[0]
-    vcalendar['gremium'] = vcalendar['gremium'].split('Sitzungen des Gremiums ')[1]
-    vcalendar['gremium'] = vcalendar['gremium'].split(' im Zeitraum')[0]
-
-    vcalendar['uid'] = '%03d.%s.berlin.de' % (
-        int(vcalendar['url'].split('=', 1)[1]),
-        borough_slug_from_url(vcalendar['url'])
-    )
-
-    vcalendar['calname'] = 'BVV %s: %s' % (vcalendar['bezirk'], vcalendar['gremium'])
-
-    calendar_rows = html.xpath('//tr[@class="zl11" or @class="zl12"]')
-    for row in calendar_rows:
-        vevent = extract_vevent(row, vcalendar)
-        vcalendar['vevents'].append(vevent)
-
-    return vcalendar
-
-def wrap_lines(text):
-    """Wrap a lines of given text to a length of 70 characters."""
-    width = 75
-    wrapped_lines = []
-    text_lines = text.split('\r\n')
-    for line in text_lines:
-        if len(line) <= width:
-            wrapped_lines.append(line)
-        else:
-            first = True
-            while line:
-                nonascii = [c for c in line[:width] if c not in string.printable]
-                nonasciiwidth = len(''.join(nonascii).encode('utf-8'))
-                if first:
-                    wrapped_lines.append(line[:width-nonasciiwidth])
-                    line = line[width-nonasciiwidth:]
-                    first = False
-                    width -= 1
-                else:
-                    wrapped_lines.append(' '+line[:width-nonasciiwidth])
-                    line = line[width-nonasciiwidth:]
-    wrapped_text = '\r\n'.join(wrapped_lines)
-    return wrapped_text
+    "Lines of text SHOULD NOT be longer than 75 octets, excluding the line
+    break.  Long content lines SHOULD be split into a multiple line
+    representations using a line "folding" technique.  That is, a long
+    line can be split between any two characters by inserting a CRLF
+    immediately followed by a single linear white-space character"
+    https://tools.ietf.org/html/rfc5545#section-3.1
+    """
+    content_lines = content.splitlines()
+    folded_content_lines = []
+    max_octets = 75
+    for line in content_lines:
+        while line:
+            characters = max_octets
+            encoded_line = line[:characters].encode('utf-8')
+            while len(encoded_line) > max_octets:
+                characters -= 1
+                encoded_line = line[:characters].encode('utf-8')
+            folded_content_lines.append(line[:characters])
+            line = line[characters:]
+            if line:
+                line = ' '+line
+    folded_content = '\n'.join(folded_content_lines)
+    return folded_content
 
 def write_vcalendar_file(vcalendar):
     """Create iCalendar data format strings and write them to files."""
-    with open('vevent.template', 'r') as template_file:
-        vevent_template = template_file.readlines()
-        vevent_template = [line.strip() for line in vevent_template]
-        vevent_template = '\r\n'.join(vevent_template)
-        vevent_template += '\r\n'
-    with open('vcalendar.template', 'r') as template_file:
-        vcalendar_template = template_file.readlines()
-        vcalendar_template = [line.strip() for line in vcalendar_template]
-        vcalendar_template = '\r\n'.join(vcalendar_template)
-        vcalendar_template += '\r\n'
-
-    vevents = vcalendar['vevents']
-    vcalendar['vevents'] = ''
-    if not vevents:
-        return False
-    for vevent in vevents:
-        vevent_string = string.Template(vevent_template)
-        vevent_string = vevent_string.safe_substitute(vevent)
-        vcalendar['vevents'] += vevent_string
-
-    vcalendar_string = string.Template(vcalendar_template)
-    vcalendar_string = vcalendar_string.safe_substitute(vcalendar)
-
-    vcalendar_string = wrap_lines(vcalendar_string)
-
-    vcalendar_file = '%s-%03d.ics' % (
-        vcalendar['uid'].split('.')[1],
-        int(vcalendar['uid'].split('.')[0])
-    )
-    with open(vcalendar_file, 'w') as icsfile:
-        icsfile.write(vcalendar_string)
+    if vcalendar.get('vevents'):
+        with open('vevent.ics', 'r') as icsfile:
+            vevent_template = icsfile.read()
+        with open('vcalendar.ics', 'r') as icsfile:
+            vcalendar_template = icsfile.read()
+        vevents_string = ''
+        for vevent in vcalendar['vevents']:
+            vevent_string = vevent_template.format(**vevent)
+            vevents_string += vevent_string
+        vcalendar['vevents'] = vevents_string
+        vcalendar_string = vcalendar_template.format(**vcalendar)
+        vcalendar_string = fold_content_lines(vcalendar_string)
+        directory = 'ics'
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        filename = '{}.ics'.format(vcalendar['uid'])
+        filename = os.path.join(directory, filename)
+        with open(filename, 'w', newline='\r\n') as icsfile:
+            icsfile.write(vcalendar_string)
 
 def main():
     """The main function."""
-    config = read_configuration('.gremienkalender.conf')
-    if config.get('request_user_agent'):
-        REQUEST_HEADERS['User-Agent'] = config['request_user_agent']
-    if config.get('request_from_email'):
-        REQUEST_HEADERS['From'] = config['request_from_email']
+    with open('links.txt', 'r') as txtfile:
+        council_links = txtfile.read()
+        council_links = council_links.splitlines()
+        valid_links = {'http://www.berlin.de/ba-',
+                       'https://www.berlin.de/ba'}
+        council_links = [l for l in council_links if l[:24] in valid_links]
 
-    with open('input.txt', 'r') as textfile:
-        input_urls = [line.strip() for line in textfile.readlines()]
-
-    for borough_url in input_urls:
-        html = get_response_content(borough_url)
-        calendar_links = extract_calendar_links(html)
-        for committee_url in calendar_links:
-            link = committee_url+date_range_query()
-            html = get_response_content(link)
-            vcalendar = extract_vcalendar(html)
+    for link in council_links:
+        allriscontainer = get_allriscontainer(link)
+        committee_links = findall_calendars(allriscontainer)
+        for link in committee_links:
+            link += '&' + DATE_RANGE
+            allriscontainer = get_allriscontainer(link)
+            vcalendar = extract_vcalendar(allriscontainer)
             if vcalendar:
                 write_vcalendar_file(vcalendar)
     SESSION.close()
