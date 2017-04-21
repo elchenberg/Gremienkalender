@@ -9,7 +9,7 @@ write them to one iCalendar file per committee.
 
 import http.client
 import os
-import string
+#import string
 import time
 import zlib
 
@@ -254,9 +254,9 @@ def fold_content_lines(content):
 def write_vcalendar_file(vcalendar):
     """Create iCalendar data format strings and write them to files."""
     if vcalendar.get('vevents'):
-        with open('vevent.ics', 'r') as icsfile:
+        with open(os.path.join('templates', 'vevent.ics'), 'r') as icsfile:
             vevent_template = icsfile.read()
-        with open('vcalendar.ics', 'r') as icsfile:
+        with open(os.path.join('templates', 'vcalendar.ics'), 'r') as icsfile:
             vcalendar_template = icsfile.read()
         vevents_string = ''
         for vevent in vcalendar['vevents']:
@@ -265,11 +265,9 @@ def write_vcalendar_file(vcalendar):
         vcalendar['vevents'] = vevents_string
         vcalendar_string = vcalendar_template.format(**vcalendar)
         vcalendar_string = fold_content_lines(vcalendar_string)
-        directory = 'ics'
-        if not os.path.exists(directory):
-            os.makedirs(directory)
         filename = '{}.ics'.format(vcalendar['uid'])
-        filename = os.path.join(directory, filename)
+        filename = os.path.join('data', filename)
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, 'w', newline='\r\n') as icsfile:
             icsfile.write(vcalendar_string)
 
