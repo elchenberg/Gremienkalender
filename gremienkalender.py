@@ -187,14 +187,15 @@ def find_event_url(row):
 
 def findall_events(allriscontainer):
     events = []
-    calendar_uid = find_calendar_uid(allriscontainer.base_url)
+    base_url = allriscontainer.base_url
+    calendar_uid = find_calendar_uid(base_url)
     committee_name = find_calendar_committee(allriscontainer)
     rows = findall_tablerows_zl1n(allriscontainer)
     for row in rows:
         event = {
             'dtstamp': DTSTAMP,
             'dtstart': find_event_dtstart(row),
-            'summary': committee_name,
+            'summary': find_calendar_borough(base_url) + ': ' + committee_name,
             'location': ''
         }
         if event.get('dtstart'):
