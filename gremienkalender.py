@@ -17,7 +17,7 @@ import lxml.html
 
 HOST = 'www.berlin.de'
 SESSION = http.client.HTTPSConnection(HOST)
-REQUEST_DELAY = 2
+REQUEST_DELAY = 5
 REQUEST_HEADERS = {'Connection': 'keep-alive', 'Accept-Encoding': 'gzip'}
 DTSTAMP = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
 BOROUGH_NAMES = {
