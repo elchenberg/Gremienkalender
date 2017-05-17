@@ -9,14 +9,16 @@ write them to one iCalendar file per committee.
 
 import http.client
 import os
+import ssl
 import time
 import zlib
 
 import lxml.html
 
 HOST = 'www.berlin.de'
-SESSION = http.client.HTTPSConnection(HOST)
-REQUEST_DELAY = 5
+SESSION = http.client.HTTPSConnection(HOST, context=ssl.create_default_context(), timeout=10)
+# With a delay greater than 4 seconds the server closes the connection between requests.
+REQUEST_DELAY = 4
 REQUEST_HEADERS = {'Connection': 'keep-alive', 'Accept-Encoding': 'gzip'}
 DTSTAMP = '{}{:02d}{:02d}T{:02d}{:02d}{:02d}Z'.format(*time.gmtime())
 BOROUGH_NAMES = {
@@ -68,7 +70,14 @@ def get_allriscontainer(url):
     request_path = url.split('www.berlin.de', 1)[1]
     time.sleep(REQUEST_DELAY)
     SESSION.request('GET', request_path, headers=REQUEST_HEADERS)
-    response = SESSION.getresponse()
+    try:
+        response = SESSION.getresponse()
+    except http.client.BadStatusLine:
+        # In Python <3.5 we need to re-connect when the remote end has closed the connection.
+        print('Re-connecting to the server ...')
+        SESSION.close()
+        SESSION.request('GET', request_path, headers=REQUEST_HEADERS)
+        response = SESSION.getresponse()
     response_body = response.read()
     if response.status == 200:
         save_cookie(response)
@@ -170,7 +179,7 @@ def find_event_dtstart(row):
         elapsed_time = (time.time() - time.mktime(dtstart))
         one_day = 60*60*24
         if elapsed_time < 1*one_day:
-            dtstart = '{}{:02d}T{:02d}{:02d}{:02d}'.format(*dtstart)
+            dtstart = '{}{:02d}{:02d}T{:02d}{:02d}{:02d}'.format(*dtstart)
             return dtstart
 
 def find_event_description(row):
