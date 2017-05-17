@@ -271,7 +271,7 @@ def write_vcalendar_file(vcalendar):
         for vevent in vcalendar['vevents']:
             vevent_string = vevent_template.format(**vevent)
             vevents_string += vevent_string
-        vcalendar['vevents'] = vevents_string
+        vcalendar['vevents'] = vevents_string+'\n'
         vcalendar_string = vcalendar_template.format(**vcalendar)
         vcalendar_string = fold_content_lines(vcalendar_string)
         filename = '{}.ics'.format(vcalendar['uid'])
