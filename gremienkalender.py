@@ -9,7 +9,6 @@ write them to one iCalendar file per committee.
 
 import http.client
 import os
-#import string
 import time
 import zlib
 
@@ -267,7 +266,7 @@ def write_vcalendar_file(vcalendar):
         vcalendar_string = vcalendar_template.format(**vcalendar)
         vcalendar_string = fold_content_lines(vcalendar_string)
         filename = '{}.ics'.format(vcalendar['uid'])
-        filename = os.path.join('data', filename)
+        filename = os.path.join('calendars', filename)
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, 'w', newline='\r\n') as icsfile:
             icsfile.write(vcalendar_string)
