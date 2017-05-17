@@ -18,7 +18,7 @@ HOST = 'www.berlin.de'
 SESSION = http.client.HTTPSConnection(HOST)
 REQUEST_DELAY = 5
 REQUEST_HEADERS = {'Connection': 'keep-alive', 'Accept-Encoding': 'gzip'}
-DTSTAMP = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+DTSTAMP = '{}{:02d}{:02d}T{:02d}{:02d}{:02d}Z'.format(*time.gmtime())
 BOROUGH_NAMES = {
     'ba-charlottenburg-wilmersdorf': 'Charlottenburg-Wilmersdorf',
     'ba-friedrichshain-kreuzberg': 'Friedrichshain-Kreuzberg',
@@ -102,10 +102,12 @@ def date_range(months=3):
     template = 'YYV={}&MMV={}&YYB={}&MMB={}'
     return template.format(year_from, month_from, year_to, month_to)
 DATE_RANGE = date_range()
+
 def find_borough_slug(url):
     slug = url.split('/', 4)[3]
     slug = slug[3:]
     return slug
+
 def find_committee_id(url):
     query_pairs = url.split('?', 1)[1]
     query_pairs = query_pairs.split('&')
@@ -168,7 +170,7 @@ def find_event_dtstart(row):
         elapsed_time = (time.time() - time.mktime(dtstart))
         one_day = 60*60*24
         if elapsed_time < 1*one_day:
-            dtstart = time.strftime('%Y%m%dT%H%M%S', dtstart)
+            dtstart = '{}{:02d}T{:02d}{:02d}{:02d}'.format(*dtstart)
             return dtstart
 
 def find_event_description(row):
@@ -198,8 +200,15 @@ def findall_events(allriscontainer):
             'location': ''
         }
         if event.get('dtstart'):
-            event['description'] = find_event_description(row)
             event['url'] = find_event_url(row)
+            event['description'] = '{}\n{}\n-- \nQuelle: {}\nStand: {}'.format(
+                find_event_description(row),
+                event['url'],
+                base_url,
+                "{2:02d}.{1:02d}.{0}, {3:02d}:{4:02d} Uhr".format(
+                    *time.localtime()
+                )
+            )
             event['uid'] = '{}-{}'.format(calendar_uid, event['dtstart'])
             #if event['url']:
                 #event_page = get_allriscontainer(event['url'])
@@ -249,7 +258,7 @@ def fold_content_lines(content):
             if line:
                 line = ' '+line
     folded_content = '\n'.join(folded_content_lines)
-    return folded_content
+    return folded_content+'\n'
 
 def write_vcalendar_file(vcalendar):
     """Create iCalendar data format strings and write them to files."""
