@@ -210,7 +210,7 @@ def findall_events(allriscontainer):
         }
         if event.get('dtstart'):
             event['url'] = find_event_url(row)
-            event['description'] = '{}\n{}\n-- \nQuelle: {}\nStand: {}'.format(
+            event['description'] = '{}\\n{}\\n-- \\nQuelle: {}\\nStand: {}'.format(
                 find_event_description(row),
                 event['url'],
                 base_url,
