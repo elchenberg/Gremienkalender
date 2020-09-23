@@ -16,7 +16,8 @@ import zlib
 import lxml.html
 
 HOST = 'www.berlin.de'
-SESSION = http.client.HTTPSConnection(HOST, context=ssl.create_default_context(), timeout=10)
+SESSION = http.client.HTTPSConnection(
+    HOST, context=ssl.create_default_context(), timeout=10)
 # With a delay greater than 4 seconds the server closes the connection between requests.
 REQUEST_DELAY = 4
 REQUEST_HEADERS = {'Connection': 'keep-alive', 'Accept-Encoding': 'gzip'}
@@ -36,12 +37,14 @@ BOROUGH_NAMES = {
     'ba-treptow-koepenick': 'Treptow-Köpenick'
 }
 
+
 def save_cookie(response):
     """Find and save ALLRIS session cookies from server response if present."""
     session_cookie = response.getheader('Set-Cookie')
     if session_cookie:
         session_cookie = session_cookie.split(';', 1)[0]
         REQUEST_HEADERS['Cookie'] = session_cookie
+
 
 def decode_response(response_body):
     """Decode response body and return a unicode string."""
@@ -56,6 +59,7 @@ def decode_response(response_body):
             response_body = response_body.decode('windows-1252', 'replace')
     return response_body
 
+
 def find_allriscontainer(response_body, base_url):
     """Find allriscontainer div element in html page source string."""
     response_body = response_body.split('s-->', 1)[1]
@@ -64,6 +68,7 @@ def find_allriscontainer(response_body, base_url):
     for div in html.getiterator('div'):
         if div.get('id') and div.get('id') == 'allriscontainer':
             return div
+
 
 def get_allriscontainer(url):
     """Return the *url*s' response body as an lxml.html.HtmlElement."""
@@ -79,12 +84,14 @@ def get_allriscontainer(url):
         SESSION.request('GET', request_path, headers=REQUEST_HEADERS)
         response = SESSION.getresponse()
     if response.status != 200:
-        raise Exception("Expected status code 200, but got {} instead".format(response.status))
+        raise Exception(
+            "Expected status code 200, but got {} instead".format(response.status))
     save_cookie(response)
     response_body = response.read()
     response_body = zlib.decompress(response_body, 47)
     response_body = decode_response(response_body)
     return find_allriscontainer(response_body, url)
+
 
 def findall_calendars(allriscontainer):
     """Return a list of calendar links extracted from html content."""
@@ -101,6 +108,7 @@ def findall_calendars(allriscontainer):
             values = sorted(values)
             return ['{}?GRA={}'.format(base, value) for value in values]
 
+
 def date_range(months=3):
     """Return an URL query string."""
     year_from, month_from, *_ = time.localtime()
@@ -111,12 +119,16 @@ def date_range(months=3):
         month_to -= 12
     template = 'YYV={}&MMV={}&YYB={}&MMB={}'
     return template.format(year_from, month_from, year_to, month_to)
+
+
 DATE_RANGE = date_range()
+
 
 def find_borough_slug(url):
     slug = url.split('/', 4)[3]
     slug = slug[3:]
     return slug
+
 
 def find_committee_id(url):
     query_pairs = url.split('?', 1)[1]
@@ -126,10 +138,12 @@ def find_committee_id(url):
         if name == 'GRA' and value.isdigit():
             return int(value)
 
+
 def find_calendar_url(url):
     calendar_url = url
     calendar_url = calendar_url.split('&', 1)[0]
     return calendar_url
+
 
 def find_calendar_uid(url):
     borough = find_borough_slug(url)
@@ -139,11 +153,13 @@ def find_calendar_uid(url):
     calendar_uid = '{}-{:03d}'.format(borough, committee)
     return calendar_uid
 
+
 def find_calendar_borough(url):
     calendar_borough = url
     calendar_borough = calendar_borough.split('/', 4)[3]
     calendar_borough = BOROUGH_NAMES[calendar_borough]
     return calendar_borough
+
 
 def find_calendar_committee(allriscontainer):
     cells = allriscontainer.getiterator('th')
@@ -153,6 +169,7 @@ def find_calendar_committee(allriscontainer):
             committee = committee[23:].split(' im Zeitraum', 1)[0]
             return committee
 
+
 def findall_tablerows_zl1n(allriscontainer):
     for table in allriscontainer.getiterator('table'):
         if table.get('class') == 'tl1':
@@ -161,6 +178,7 @@ def findall_tablerows_zl1n(allriscontainer):
                 if row.get('class') == 'zl11' or row.get('class') == 'zl12':
                     tablerows.append(row)
             return tablerows
+
 
 def find_event_dtstart(row):
     date_text = row[0].text[4:]
@@ -183,11 +201,13 @@ def find_event_dtstart(row):
             dtstart = '{}{:02d}{:02d}T{:02d}{:02d}{:02d}'.format(*dtstart)
             return dtstart
 
+
 def find_event_description(row):
     try:
         return row[3][0].text
     except IndexError:
         return row[3].text
+
 
 def find_event_url(row):
     try:
@@ -195,6 +215,7 @@ def find_event_url(row):
         return 'https://{}{}'.format(HOST, href)
     except IndexError:
         return ''
+
 
 def findall_events(allriscontainer):
     events = []
@@ -220,11 +241,9 @@ def findall_events(allriscontainer):
                 )
             )
             event['uid'] = '{}-{}'.format(calendar_uid, event['dtstart'])
-            #if event['url']:
-                #event_page = get_allriscontainer(event['url'])
-            #    pass
             events.append(event)
     return events
+
 
 def extract_vcalendar(allriscontainer):
     """Return a list of committee meetings extracted from html content."""
@@ -242,6 +261,7 @@ def extract_vcalendar(allriscontainer):
             vcalendar['committee']
         )
         return vcalendar
+
 
 def fold_content_lines(content):
     """Fold lines of *content* string to a length of 75 octets.
@@ -270,6 +290,7 @@ def fold_content_lines(content):
     folded_content = '\n'.join(folded_content_lines)
     return folded_content+'\n'
 
+
 def write_vcalendar_file(vcalendar):
     """Create iCalendar data format strings and write them to files."""
     if vcalendar.get('vevents'):
@@ -290,6 +311,7 @@ def write_vcalendar_file(vcalendar):
         with open(filename, 'w', newline='\r\n') as icsfile:
             icsfile.write(vcalendar_string)
 
+
 def main():
     """The main function."""
     with open('links.txt', 'r') as txtfile:
@@ -309,6 +331,7 @@ def main():
             if vcalendar:
                 write_vcalendar_file(vcalendar)
     SESSION.close()
+
 
 if __name__ == '__main__':
     main()
