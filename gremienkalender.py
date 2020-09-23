@@ -78,12 +78,13 @@ def get_allriscontainer(url):
         time.sleep(REQUEST_DELAY)
         SESSION.request('GET', request_path, headers=REQUEST_HEADERS)
         response = SESSION.getresponse()
+    if response.status != 200:
+        raise Exception("Expected status code 200, but got {} instead".format(response.status))
+    save_cookie(response)
     response_body = response.read()
-    if response.status == 200:
-        save_cookie(response)
-        response_body = zlib.decompress(response_body, 47)
-        response_body = decode_response(response_body)
-        return find_allriscontainer(response_body, url)
+    response_body = zlib.decompress(response_body, 47)
+    response_body = decode_response(response_body)
+    return find_allriscontainer(response_body, url)
 
 def findall_calendars(allriscontainer):
     """Return a list of calendar links extracted from html content."""
