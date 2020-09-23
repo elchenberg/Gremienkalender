@@ -7,7 +7,9 @@ convert forthcoming committee meetings to iCalendar data format and
 write them to one iCalendar file per committee.
 """
 
+import argparse
 import http.client
+import logging
 import os
 import ssl
 import time
@@ -15,11 +17,18 @@ import zlib
 
 import lxml.html
 
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    '--log', type=str, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='ERROR')
+args = parser.parse_args()
+level = getattr(logging, args.log.upper(), None)
+logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S', level=level)
+
 HOST = 'www.berlin.de'
 SESSION = http.client.HTTPSConnection(
     HOST, context=ssl.create_default_context(), timeout=10)
-# With a delay greater than 4 seconds the server closes the connection between requests.
-REQUEST_DELAY = 4
+REQUEST_DELAY = 10
 REQUEST_HEADERS = {'Connection': 'keep-alive', 'Accept-Encoding': 'gzip'}
 DTSTAMP = '{}{:02d}{:02d}T{:02d}{:02d}{:02d}Z'.format(*time.gmtime())
 BOROUGH_NAMES = {
@@ -72,20 +81,25 @@ def find_allriscontainer(response_body, base_url):
 
 def get_allriscontainer(url):
     """Return the *url*s' response body as an lxml.html.HtmlElement."""
-    request_path = url.split('www.berlin.de', 1)[1]
+    logging.info("url: {}".format(url))
+    request_path = url.split(HOST, 1)[1]
+    logging.debug("path: {}".format(request_path))
     time.sleep(REQUEST_DELAY)
     SESSION.request('GET', request_path, headers=REQUEST_HEADERS)
     try:
         response = SESSION.getresponse()
     except (http.client.BadStatusLine, http.client.socket.timeout):
-        print('Re-connecting to the server ...')
+        logging.warning('starting a new session')
         SESSION.close()
+        if 'Cookie' in REQUEST_HEADERS:
+            del REQUEST_HEADERS['Cookie']
         time.sleep(REQUEST_DELAY)
         SESSION.request('GET', request_path, headers=REQUEST_HEADERS)
         response = SESSION.getresponse()
     if response.status != 200:
-        raise Exception(
-            "Expected status code 200, but got {} instead".format(response.status))
+        message = "{} {}".format(response.status, url)
+        logging.error(message)
+        raise Exception(message)
     save_cookie(response)
     response_body = response.read()
     response_body = zlib.decompress(response_body, 47)
@@ -322,11 +336,19 @@ def main():
         council_links = [l for l in council_links if l[:24] in valid_links]
 
     for link in council_links:
-        allriscontainer = get_allriscontainer(link)
+        try:
+            allriscontainer = get_allriscontainer(link)
+        except:
+            logging.warning('Skipping {}'.format(link))
+            continue
         committee_links = findall_calendars(allriscontainer)
         for link in committee_links:
             link += '&' + DATE_RANGE
-            allriscontainer = get_allriscontainer(link)
+            try:
+                allriscontainer = get_allriscontainer(link)
+            except:
+                logging.warning('Skipping {}'.format(link))
+                continue
             vcalendar = extract_vcalendar(allriscontainer)
             if vcalendar:
                 write_vcalendar_file(vcalendar)
