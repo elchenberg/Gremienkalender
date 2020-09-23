@@ -72,10 +72,10 @@ def get_allriscontainer(url):
     SESSION.request('GET', request_path, headers=REQUEST_HEADERS)
     try:
         response = SESSION.getresponse()
-    except http.client.BadStatusLine:
-        # In Python <3.5 we need to re-connect when the remote end has closed the connection.
+    except (http.client.BadStatusLine, http.client.socket.timeout):
         print('Re-connecting to the server ...')
         SESSION.close()
+        time.sleep(REQUEST_DELAY)
         SESSION.request('GET', request_path, headers=REQUEST_HEADERS)
         response = SESSION.getresponse()
     response_body = response.read()
